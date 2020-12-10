@@ -53,6 +53,10 @@ class TSPSolver:
     def defaultRandomTour(self, time_allowance=60.0):
         results = {}
         cities = self._scenario.getCities()
+        cities.sort(key=self.sortByX)
+        Lines = []
+        self.iterative_TSP_solver(cities, time_allowance, 0, Lines)
+        print([c._index for c in cities])
         ncities = len(cities)
         foundTour = False
         count = 0
@@ -93,7 +97,46 @@ class TSPSolver:
 		algorithm</returns> 
 	'''
 
-    # Greedy algorithm to get initial BSSF
+    def sortByX(self, city):
+        return city._x
+
+    def iterative_TSP_solver(self, cities, time_allowance, time_taken, Lines = None):
+        if Lines is None:
+            Lines = []
+
+        start_time = time.time()
+        #if only one city, return that city
+        if len(cities) == 1:
+            return cities
+
+        L_side = cities[0:math.floor(len(cities)/2)]
+        r_most_point = L_side[len(L_side) - 1]
+
+        R_side = cities[math.floor(len(cities)/2):]
+        l_most_point = R_side[0]
+
+        # Recursively run iterative_TSP_solver on any arrays larger than 1.
+        # Run combine_Routes on arrays whose size is equal to 1 and on return back up recursion stack.
+        if (len(L_side) == 1 and len(R_side) == 1):
+            return self.combine_routes(L_side, r_most_point, R_side, l_most_point, Lines)
+        elif (len(L_side) == 1 and len(R_side) > 1):
+            return self.combine_routes(L_side, r_most_point, self.iterative_TSP_solver(R_side, time_allowance, time_taken + time.time()-start_time), l_most_point, Lines)
+        elif (len(L_side) > 1 and len(R_side) == 1):
+            return self.combine_routes(self.iterative_TSP_solver(L_side, time_allowance, time_taken + time.time()-start_time, Lines), r_most_point, R_side, l_most_point, Lines)
+        else:
+            return self.combine_routes(self.iterative_TSP_solver(L_side, time_allowance, time_taken + time.time()-start_time, Lines), r_most_point,
+                                      self.iterative_TSP_solver(R_side, time_allowance, time_taken + time.time()-start_time, Lines), l_most_point, Lines)
+
+    def combine_routes(self, l_route, r_most_city, r_route, l_most_city, Lines):
+        if len(l_route) == 1 and len(r_route) == 1:
+            p1 = QPointF(l_route[0]._x, l_route[0]._y)
+            p2 = QPointF(r_route[0]._x, r_route[0]._y)
+            Lines.append(QLineF(p1, p2))
+
+        return_route = l_route + r_route
+        return return_route
+
+# Greedy algorithm to get initial BSSF
     # space is O(n) - has to hold all of the cities
     #
 
@@ -269,6 +312,36 @@ class TSPSolver:
 
         return reduced_matrix, sum
 
+    def get_fancy_init_reduced_matrix(self, city_list):
+        linking_city = city_list[len(city_list)-1]
+        city_list = city_list[:len(city_list)-2]
+
+        reduced_matrix = np.full((len(city_list), len(city_list)), fill_value=np.inf)
+        # O(n)
+        for origin_index, city in enumerate(city_list):
+            for dest_index, dest_city in enumerate(city_list):
+                if origin_index == dest_index:
+                    continue
+                distance = city.costTo(dest_city)
+                reduced_matrix[origin_index][dest_index] = distance
+
+        for i in range(len(reduced_matrix)):
+            reduced_matrix[i][0] = city_list[i].costTo(linking_city)
+
+        sum = 0
+        #O(n^2) to go through every cell in the matrix
+        for row in range(reduced_matrix.shape[0]):
+            row_min = np.min(reduced_matrix[row])
+            reduced_matrix[row] = reduced_matrix[row] - row_min
+            sum += row_min
+
+        for col in range(reduced_matrix.shape[1]):
+            column_min = np.min(reduced_matrix[:, col])
+            reduced_matrix[:, col] = reduced_matrix[:, col] - column_min
+            sum += column_min
+
+        return reduced_matrix, sum
+
 
     # O(1) time and space - just compares the two values
     def getMax(self, x, y):
@@ -310,10 +383,18 @@ class TSPSolver:
     def get_reduced_matrix(self, next_city_to_visit, matrix, given_tuple):
         # copy to avoid changes to original
         # O(1) time, O(n^2) space
+
+        # 0 - val to use for sorting
+        # 1 - current node
+        # 2 - the rest of the nodes to still visit
+        # 3 - reduced matrix for current node
+        # 4 - path to current spot
+        # 5 - total cost of current path (current node)
+
         city_copy = deepcopy(given_tuple)
         matrix = matrix.copy()
         sum = 0
-        initial_cost = matrix[city_copy[1]._index][next_city_to_visit._index]
+        initial_cost = matrix[city_copy[1]._sub_route_index][next_city_to_visit._sub_route_index]
 
         # BEGIN REDUCING MATRIX
         matrix[city_copy[1]._index] = np.inf
@@ -343,6 +424,54 @@ class TSPSolver:
 
         return result
 
+
+
+    def get_fancy_reduced_matrix(self, next_city_to_visit, given_tuple):
+        # copy to avoid changes to original
+        # O(1) time, O(n^2) space
+        matrix = given_tuple[3]
+
+        # 0 - val to use for sorting
+        # 1 - current node
+        # 2 - the rest of the nodes to still visit
+        # 3 - reduced matrix for current node
+        # 4 - path to current spot
+        # 5 - total cost of current path (current node)
+
+        city_copy = deepcopy(given_tuple)
+        matrix = matrix.copy()
+        sum = 0
+        initial_cost = matrix[city_copy[1]._sub_route_index][next_city_to_visit._sub_route_index]
+
+        # BEGIN REDUCING MATRIX
+        matrix[city_copy[1]._index] = np.inf
+        matrix[:, next_city_to_visit._index] = np.inf
+        matrix[next_city_to_visit._index][city_copy[1]._index] = np.inf
+
+        for row in range(matrix.shape[0]):
+            row_min = np.min(matrix[row])
+            if not np.isinf(row_min):
+                matrix[row] = matrix[row] - row_min
+                sum += row_min
+
+        for col in range(matrix.shape[1]):
+            column_min = np.min(matrix[:, col])
+            if not np.isinf(column_min):
+                matrix[:, col] = matrix[:, col] - column_min
+                sum += column_min
+
+        # O(n) time, O(1) space to delete it
+        # visits all the cities
+        places_to_go = city_copy[2]
+        places_to_go = self.delete_city_by_id(places_to_go, next_city_to_visit)
+
+        updated_cost = city_copy[5] + initial_cost + sum
+
+        result = ((self.get_value(city_copy[5], city_copy[4]), next_city_to_visit, places_to_go, matrix,
+                   city_copy[4] + [next_city_to_visit._index], updated_cost))
+
+        return result
+
     ''' <summary>
 		This is the entry point for the algorithm you'll write for your group project.
 		</summary>
@@ -355,43 +484,28 @@ class TSPSolver:
 
     def fancy(self, time_allowance=60.0):
 
-        '''
-        divide and conquer branch and bound
+        greedy_route = self.greedy()['soln'].route
+        sub_routes = []
+        current_sub_route = []
 
-        divide the problem into n sets of x cities
+        for i in range(len(greedy_route)):
+            current_sub_route.append(greedy_route[i])
+            greedy_route[i]._sub_route_index = i % 10
 
-        solve each one with branch and bound
+            if i % 10 == 0 and i != 0:
+                if i == len(greedy_route) - 1: current_sub_route.append(greedy_route[0])
+                sub_routes.append(current_sub_route.copy())
+                current_sub_route = [greedy_route[i]]
+            elif i == len(greedy_route) - 1:
+                current_sub_route.append(greedy_route[0])
+                sub_routes.append(current_sub_route)
 
-        build back up to final solution
+        bb_sub_routes = []
+        for route in sub_routes:
+            # run B and B on each subroute
+            bb_sub_routes.append(self.branchAndBoundFancy(route)['soln'].route)
 
-        must find more optimal solution than greedy
-
-        :param time_allowance:
-        :return:
-        '''
-        found = False
-        start_time = time.time()
-        while time.time() - start_time < time_allowance and not found:
-            cities = self._scenario.getCities()
-            results = self.recursive(cities)
-
-
-
-
-    def recursive(self, cities):
-        if len(cities) >= 12:
-            # returns branch and bound solution as results dictionary
-            return self.branchAndBoundFancy(60.0, cities)
-        n = len(cities)
-        # How to divide the cities
-        # proximity ---> abs(x-x) + abs(y-y)
-        cities1 = self.recursive(cities[0 :n//2])
-        cities2 = self.recursive(cities[:n//2])
-        # return the combination of the paths
-
-    def combineSolutions(self, cities1,cities2):
-        # combine the two solutions
-        pass
+        return
 
     def branchAndBoundFancy(self, fCities, time_allowance=60.0):
         heap = []
@@ -405,8 +519,17 @@ class TSPSolver:
         self.cities = cities
         self.lowest_ave_cost = float("inf")
         self.lowest_cost = bssf.cost
-        first_reduced_matrix, first_lb = self.get_init_reduced_matrix(cities)
-        first_city = tuple((first_lb, cities[0], cities[1:], first_reduced_matrix, [cities[0]._index], first_lb))
+        first_reduced_matrix, first_lb = self.get_fancy_init_reduced_matrix(cities)
+        first_city = tuple((first_lb, cities[0], cities[1:], first_reduced_matrix, [cities[0]._index], first_lb, 0))
+
+        # 0 - val to use for sorting
+        # 1 - current node
+        # 2 - the rest of the nodes to still visit
+        # 3 - reduced matrix for current node
+        # 4 - path to current spot
+        # 5 - total cost of current path (current node)
+        # 6 - index within sub-route
+
         heapq.heappush(heap, first_city)
         start_time = time.time()
         while time.time() - start_time < time_allowance and len(heap):
@@ -414,7 +537,7 @@ class TSPSolver:
             if next_city[5] < self.lowest_cost:
                 for city in next_city[2]:
                     if self._scenario._edge_exists[next_city[1]._index][city._index]:
-                        new_expanded_problem = self.get_reduced_matrix(city, next_city[3], next_city)
+                        new_expanded_problem = self.get_fancy_reduced_matrix(city, next_city)
                         if not len(new_expanded_problem[2]):
                             route = self.convert_to_cities(new_expanded_problem[4])
                             bssf = TSPSolution(route)

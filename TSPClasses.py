@@ -49,11 +49,6 @@ def nameForInt( num ):
 
 
 
-
-
-
-
-
 class Scenario:
 
 	HARD_MODE_FRACTION_TO_REMOVE = 0.20 # Remove 20% of the edges
@@ -140,7 +135,11 @@ class City:
 		self._elevation = elevation
 		self._scenario	= None
 		self._index = -1
+		self._sub_route_index = -1
 		self._name	= None
+
+	def __cmp__(self, other):
+		return self._x - other._x
 
 	def setIndexAndName( self, index, name ):
 		self._index = index
