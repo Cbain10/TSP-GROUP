@@ -356,92 +356,23 @@ class TSPSolver:
     def fancy(self, time_allowance=60.0):
 
         '''
-        divide and conquer branch and bound
+            get greedy solution for all cities
 
-        divide the problem into n sets of x cities
+            divide greedy solution into groups of size (x)
 
-        solve each one with branch and bound
+            run branch and bound on each solution, but change first column of matrix to the first element
+            of the next section ie. 20, so that every node in section one goes to 20
 
-        build back up to final solution
+            find the optimal route to get from 0 to 20
 
-        must find more optimal solution than greedy
+            do for all sections
 
-        :param time_allowance:
-        :return:
+            append then paths together
+
+            CODE TO WRITE:
+                divide greedy solution into pieces
+                alter branch and bound to find solution to next section
+                stitch paths together
         '''
-        found = False
-        start_time = time.time()
-        while time.time() - start_time < time_allowance and not found:
-            cities = self._scenario.getCities()
-            results = self.recursive(cities)
 
-
-
-
-    def recursive(self, cities):
-        if len(cities) >= 12:
-            # returns branch and bound solution as results dictionary
-            return self.branchAndBoundFancy(60.0, cities)
-        n = len(cities)
-        # How to divide the cities
-        # proximity ---> abs(x-x) + abs(y-y)
-        cities1 = self.recursive(cities[0 :n//2])
-        cities2 = self.recursive(cities[:n//2])
-        # return the combination of the paths
-
-    def combineSolutions(self, cities1,cities2):
-        # combine the two solutions
-        pass
-
-    def branchAndBoundFancy(self, fCities, time_allowance=60.0):
-        heap = []
-        bssf_changes = 0
-        max_length = 1
-        num_states_made = 1
-        pruned = 0
-        num_solutions = 0
-        bssf = self.greedy(time_allowance=time_allowance)['soln']
-        cities = fCities
-        self.cities = cities
-        self.lowest_ave_cost = float("inf")
-        self.lowest_cost = bssf.cost
-        first_reduced_matrix, first_lb = self.get_init_reduced_matrix(cities)
-        first_city = tuple((first_lb, cities[0], cities[1:], first_reduced_matrix, [cities[0]._index], first_lb))
-        heapq.heappush(heap, first_city)
-        start_time = time.time()
-        while time.time() - start_time < time_allowance and len(heap):
-            next_city = heapq.heappop(heap)
-            if next_city[5] < self.lowest_cost:
-                for city in next_city[2]:
-                    if self._scenario._edge_exists[next_city[1]._index][city._index]:
-                        new_expanded_problem = self.get_reduced_matrix(city, next_city[3], next_city)
-                        if not len(new_expanded_problem[2]):
-                            route = self.convert_to_cities(new_expanded_problem[4])
-                            bssf = TSPSolution(route)
-                            if bssf.cost < self.lowest_cost:
-                                self.lowest_cost = min(bssf.cost, self.lowest_cost)
-                                bssf_changes += 1
-                            num_solutions += 1
-                        else:
-                            if new_expanded_problem[5] < self.lowest_cost:
-                                heapq.heappush(heap, new_expanded_problem)
-                                num_states_made += 1
-                            else:
-                                pruned += 1
-                                num_states_made += 1
-            else:
-                pruned += 1
-                num_states_made += 1
-            max_length = self.getMax(len(heap), max_length)
-
-        final_time = time.time()
-        results = {}
-        results['cost'] = self.lowest_cost
-        # results['max'] = max_length
-        # results['total'] = num_states_made
-        # results['pruned'] = pruned
-        results['count'] = num_solutions
-        results['soln'] = bssf
-        results['time'] = final_time - start_time
-        return results
 
