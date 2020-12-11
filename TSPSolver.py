@@ -352,27 +352,193 @@ class TSPSolver:
 		algorithm</returns> 
 	'''
 
+####################################################################################################################
+######################################################  FANCY  ###################################################
+####################################################################################################################
+
 
     def fancy(self, time_allowance=60.0):
+        self._fancy_count = 0
+        print('fancy')
+        results = {}
+        start_time = time.time()
 
-        '''
-            get greedy solution for all cities
+        greedy_route = self.greedy()['soln'].route
+        sub_routes = []
+        current_sub_route = []
 
-            divide greedy solution into groups of size (x)
+        for i in range(len(greedy_route)):
+            current_sub_route.append(greedy_route[i])
+            greedy_route[i]._sub_route_index = i % 16
 
-            run branch and bound on each solution, but change first column of matrix to the first element
-            of the next section ie. 20, so that every node in section one goes to 20
+            if i % 16 == 0 and i != 0:
+                if i == len(greedy_route) - 1: current_sub_route.append(greedy_route[0])
+                sub_routes.append(current_sub_route.copy())
+                current_sub_route = [greedy_route[i]]
+            elif i == len(greedy_route) - 1:
+                current_sub_route.append(greedy_route[0])
+                sub_routes.append(current_sub_route)
 
-            find the optimal route to get from 0 to 20
-
-            do for all sections
-
-            append then paths together
-
-            CODE TO WRITE:
-                divide greedy solution into pieces
-                alter branch and bound to find solution to next section
-                stitch paths together
-        '''
+        #bb_sub_routes = []
+        total_route = []
+        for route in sub_routes:
+            # run B and B on each subroute
+            #bb_sub_routes.append(self.branchAndBoundFancy(route)['soln'].route)
+            total_route = total_route + self.branchAndBoundFancy(route)['soln'].route
 
 
+        bssf = TSPSolution(total_route)
+
+        end_time = time.time()
+        results['cost'] = bssf.cost
+        results['time'] = end_time - start_time
+        results['count'] = -1
+        results['soln'] = bssf
+        results['max'] = None
+        results['total'] = None
+        results['pruned'] = None
+
+        return results
+
+    def branchAndBoundFancy(self, fCities, time_allowance=60.0):
+        heap = []
+        bssf_changes = 0
+        max_length = 1
+        num_states_made = 1
+        pruned = 0
+        num_solutions = 0
+        bssf = self.greedy(time_allowance=time_allowance)['soln']
+        cities = fCities
+        self.lowest_ave_cost = float("inf")
+        self.lowest_cost = bssf.cost
+        linking_city = cities.pop()  # = cities[:len(cities)-1]
+        print(linking_city._name)
+        self.cities = cities
+        first_reduced_matrix, first_lb = self.get_fancy_init_reduced_matrix(cities, linking_city)
+        first_city = tuple(
+            (first_lb, cities[0], cities[1:], first_reduced_matrix, [cities[0]._sub_route_index], first_lb, 0))
+
+        # 0 - val to use for sorting
+        # 1 - current node
+        # 2 - the rest of the nodes to still visit
+        # 3 - reduced matrix for current node
+        # 4 - path to current spot
+        # 5 - total cost of current path (current node)
+        # 6 - index within sub-route
+
+        heapq.heappush(heap, first_city)
+        start_time = time.time()
+        while len(heap):
+            next_city = heapq.heappop(heap)
+            if next_city[5] < self.lowest_cost:
+                for city in next_city[2]:
+                    if self._scenario._edge_exists[next_city[1]._sub_route_index][city._sub_route_index]:
+                        new_expanded_problem = self.get_fancy_reduced_matrix(city, next_city)
+                        if not len(new_expanded_problem[2]):
+                            route = self.convert_to_cities(new_expanded_problem[4])
+                            bssf = TSPSolution(route)
+                            if bssf.cost < self.lowest_cost:
+                                self.lowest_cost = min(bssf.cost, self.lowest_cost)
+                                bssf_changes += 1
+                            num_solutions += 1
+                        else:
+                            if new_expanded_problem[5] < self.lowest_cost:
+                                heapq.heappush(heap, new_expanded_problem)
+                                num_states_made += 1
+                            else:
+                                pruned += 1
+                                num_states_made += 1
+            else:
+                pruned += 1
+                num_states_made += 1
+            max_length = self.getMax(len(heap), max_length)
+
+        final_time = time.time()
+        results = {}
+        results['cost'] = self.lowest_cost
+        # results['max'] = max_length
+        # results['total'] = num_states_made
+        # results['pruned'] = pruned
+        results['count'] = num_solutions
+        results['soln'] = bssf
+        results['time'] = final_time - start_time
+        return results
+
+
+    def get_fancy_reduced_matrix(self, next_city_to_visit, given_tuple):
+        self._fancy_count = self._fancy_count + 1
+        print('fancy_reduced: ' + str(self._fancy_count))
+        # copy to avoid changes to original
+        # O(1) time, O(n^2) space
+        matrix = given_tuple[3]
+
+        # 0 - val to use for sorting
+        # 1 - current node
+        # 2 - the rest of the nodes to still visit
+        # 3 - reduced matrix for current node
+        # 4 - path to current spot
+        # 5 - total cost of current path (current node)
+
+        city_copy = deepcopy(given_tuple)
+        matrix = matrix.copy()
+        sum = 0
+        initial_cost = matrix[city_copy[1]._sub_route_index][next_city_to_visit._sub_route_index]
+
+        # BEGIN REDUCING MATRIX
+        matrix[city_copy[1]._sub_route_index] = np.inf
+        matrix[:, next_city_to_visit._sub_route_index] = np.inf
+        matrix[next_city_to_visit._sub_route_index][city_copy[1]._sub_route_index] = np.inf
+
+        for row in range(matrix.shape[0]):
+            row_min = np.min(matrix[row])
+            if not np.isinf(row_min):
+                matrix[row] = matrix[row] - row_min
+                sum += row_min
+
+        for col in range(matrix.shape[1]):
+            column_min = np.min(matrix[:, col])
+            if not np.isinf(column_min):
+                matrix[:, col] = matrix[:, col] - column_min
+                sum += column_min
+
+        # O(n) time, O(1) space to delete it
+        # visits all the cities
+        places_to_go = city_copy[2]
+        places_to_go = self.delete_city_by_id(places_to_go, next_city_to_visit)
+
+        updated_cost = city_copy[5] + initial_cost + sum
+
+        result = ((self.get_value(city_copy[5], city_copy[4]), next_city_to_visit, places_to_go, matrix,
+                   city_copy[4] + [next_city_to_visit._sub_route_index], updated_cost))
+
+        return result
+
+    def get_fancy_init_reduced_matrix(self, city_list, linking_city):
+        # linking_city = city_list[len(city_list)-1]
+        # city_list = city_list[:len(city_list)-1]
+        print('fancy_init')
+        reduced_matrix = np.full((len(city_list), len(city_list)), fill_value=np.inf)
+        # O(n)
+        for origin_index, city in enumerate(city_list):
+            for dest_index, dest_city in enumerate(city_list):
+                if origin_index == dest_index:
+                    continue
+                distance = city.costTo(dest_city)
+                reduced_matrix[origin_index][dest_index] = distance
+
+        for i in range(len(reduced_matrix)):
+            reduced_matrix[i][0] = city_list[i].costTo(linking_city)
+
+        sum = 0
+        # O(n^2) to go through every cell in the matrix
+        for row in range(reduced_matrix.shape[0]):
+            row_min = np.min(reduced_matrix[row])
+            reduced_matrix[row] = reduced_matrix[row] - row_min
+            sum += row_min
+
+        for col in range(reduced_matrix.shape[1]):
+            column_min = np.min(reduced_matrix[:, col])
+            reduced_matrix[:, col] = reduced_matrix[:, col] - column_min
+            sum += column_min
+
+        return reduced_matrix, sum
