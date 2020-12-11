@@ -370,6 +370,8 @@ class TSPSolver:
         for i in range(len(greedy_route)):
             current_sub_route.append(greedy_route[i])
             greedy_route[i]._sub_route_index = i % 16
+            print(greedy_route[i]._sub_route_index)
+            # raise TypeError
 
             if i % 16 == 0 and i != 0:
                 if i == len(greedy_route) - 1: current_sub_route.append(greedy_route[0])
@@ -384,7 +386,7 @@ class TSPSolver:
         for route in sub_routes:
             # run B and B on each subroute
             #bb_sub_routes.append(self.branchAndBoundFancy(route)['soln'].route)
-            total_route = total_route + self.branchAndBoundFancy(route)['soln'].route
+            total_route = total_route + self.branchAndBoundFancy(route, time_allowance/len(sub_routes))['soln'].route
 
 
         bssf = TSPSolution(total_route)
@@ -407,11 +409,13 @@ class TSPSolver:
         num_states_made = 1
         pruned = 0
         num_solutions = 0
-        bssf = self.greedy(time_allowance=time_allowance)['soln']
+        # FIXME - need to change the bound
         cities = fCities
+        bssf = TSPSolution(fCities)
+        linking_city = cities.pop()  # = cities[:len(cities)-1]
+        bssf.cost = self.fancy_costOfRoute(fCities, linking_city)
         self.lowest_ave_cost = float("inf")
         self.lowest_cost = bssf.cost
-        linking_city = cities.pop()  # = cities[:len(cities)-1]
         print(linking_city._name)
         self.cities = cities
         first_reduced_matrix, first_lb = self.get_fancy_init_reduced_matrix(cities, linking_city)
@@ -425,18 +429,20 @@ class TSPSolver:
         # 4 - path to current spot
         # 5 - total cost of current path (current node)
         # 6 - index within sub-route
+        print("lowest cost" + str(self.lowest_cost))
 
         heapq.heappush(heap, first_city)
         start_time = time.time()
-        while len(heap):
+        while time.time() - start_time < time_allowance and len(heap):
             next_city = heapq.heappop(heap)
             if next_city[5] < self.lowest_cost:
                 for city in next_city[2]:
-                    if self._scenario._edge_exists[next_city[1]._sub_route_index][city._sub_route_index]:
+                    if self._scenario._edge_exists[next_city[1]._index][city._index]:
                         new_expanded_problem = self.get_fancy_reduced_matrix(city, next_city)
                         if not len(new_expanded_problem[2]):
                             route = self.convert_to_cities(new_expanded_problem[4])
                             bssf = TSPSolution(route)
+                            bssf.cost = self.fancy_costOfRoute(route, linking_city)
                             if bssf.cost < self.lowest_cost:
                                 self.lowest_cost = min(bssf.cost, self.lowest_cost)
                                 bssf_changes += 1
@@ -464,10 +470,19 @@ class TSPSolver:
         results['time'] = final_time - start_time
         return results
 
+    def fancy_costOfRoute(self, route, linking_city):
+        cost = 0
+        last = route[0]
+        for city in route[1:]:
+            cost += last.costTo(city)
+            last = city
+        cost += route[-1].costTo(linking_city)
+        return cost
+
 
     def get_fancy_reduced_matrix(self, next_city_to_visit, given_tuple):
-        self._fancy_count = self._fancy_count + 1
-        print('fancy_reduced: ' + str(self._fancy_count))
+        # self._fancy_count = self._fancy_count + 1
+        # print('fancy_reduced: ' + str(self._fancy_count))
         # copy to avoid changes to original
         # O(1) time, O(n^2) space
         matrix = given_tuple[3]
@@ -542,3 +557,49 @@ class TSPSolver:
             sum += column_min
 
         return reduced_matrix, sum
+
+    def greedy_fancy(self, fCities, time_allowance=60.0):
+        bssf = None
+        cities = fCities
+        # cities = self._scenario.getCities()
+        solution_dict = {}
+        start_time = time.time()
+        # 60 seconds max time O(1)
+        while time.time() - start_time < time_allowance:
+            # O(n) - iterates through the size of all the cities
+            for index in range(len(cities)):
+                path = []
+                city = cities[index]
+                current_city = cities[index]
+                path.append(city)
+                to_visit = deepcopy(cities)
+                del to_visit[index]
+                # O(n) - iterates through size of inputs
+                # takes one out every iteration
+                while len(to_visit) != 0:
+                    closest_city_tuple = self.get_closest_cities(current_city, to_visit)[0]
+                    closest_city_index = to_visit.index(closest_city_tuple[0])
+                    closest_city = to_visit[closest_city_index]
+                    del to_visit[closest_city_index]
+                    path.append(closest_city)
+                    current_city = closest_city
+                bssf = TSPSolution(path)
+                end_time = time.time()
+                results = {}
+                results['cost'] = bssf.cost
+                results['time'] = end_time - start_time
+                results['count'] = None
+                results['soln'] = bssf
+                results['max'] = None
+                results['total'] = None
+                results['pruned'] = None
+                solution_dict[index] = results
+
+            self.lowest_cost = float("inf")
+            for key, solution in solution_dict.items():
+                print(key, solution["cost"])
+                if solution["cost"] < self.lowest_cost:
+                    self.lowest_cost = solution["cost"]
+                    lowest = solution
+
+            return lowest

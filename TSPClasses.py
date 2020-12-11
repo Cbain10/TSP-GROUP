@@ -140,6 +140,7 @@ class City:
 		self._elevation = elevation
 		self._scenario	= None
 		self._index = -1
+		self._sub_route_index = -1
 		self._name	= None
 
 	def setIndexAndName( self, index, name ):
