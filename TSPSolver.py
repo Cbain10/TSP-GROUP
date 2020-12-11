@@ -97,9 +97,6 @@ class TSPSolver:
 		algorithm</returns> 
 	'''
 
-    def sortByX(self, city):
-        return city._x
-
 
 # Greedy algorithm to get initial BSSF
     # space is O(n) - has to hold all of the cities
@@ -143,7 +140,7 @@ class TSPSolver:
 
             self.lowest_cost = float("inf")
             for key, solution in solution_dict.items():
-                print(key, solution["cost"])
+                # print(key, solution["cost"])
                 if solution["cost"] < self.lowest_cost:
                     self.lowest_cost = solution["cost"]
                     lowest = solution
@@ -277,10 +274,10 @@ class TSPSolver:
 
         return reduced_matrix, sum
 
-    def get_fancy_init_reduced_matrix(self, city_list):
-        linking_city = city_list[len(city_list)-1]
-        city_list = city_list[:len(city_list)-2]
-
+    def get_fancy_init_reduced_matrix(self, city_list, linking_city):
+        # linking_city = city_list[len(city_list)-1]
+        # city_list = city_list[:len(city_list)-1]
+        print('fancy_init')
         reduced_matrix = np.full((len(city_list), len(city_list)), fill_value=np.inf)
         # O(n)
         for origin_index, city in enumerate(city_list):
@@ -389,9 +386,9 @@ class TSPSolver:
 
         return result
 
-
-
     def get_fancy_reduced_matrix(self, next_city_to_visit, given_tuple):
+        self._fancy_count = self._fancy_count + 1
+        print('fancy_reduced: ' + str(self._fancy_count))
         # copy to avoid changes to original
         # O(1) time, O(n^2) space
         matrix = given_tuple[3]
@@ -409,9 +406,9 @@ class TSPSolver:
         initial_cost = matrix[city_copy[1]._sub_route_index][next_city_to_visit._sub_route_index]
 
         # BEGIN REDUCING MATRIX
-        matrix[city_copy[1]._index] = np.inf
-        matrix[:, next_city_to_visit._index] = np.inf
-        matrix[next_city_to_visit._index][city_copy[1]._index] = np.inf
+        matrix[city_copy[1]._sub_route_index] = np.inf
+        matrix[:, next_city_to_visit._sub_route_index] = np.inf
+        matrix[next_city_to_visit._sub_route_index][city_copy[1]._sub_route_index] = np.inf
 
         for row in range(matrix.shape[0]):
             row_min = np.min(matrix[row])
@@ -433,7 +430,9 @@ class TSPSolver:
         updated_cost = city_copy[5] + initial_cost + sum
 
         result = ((self.get_value(city_copy[5], city_copy[4]), next_city_to_visit, places_to_go, matrix,
-                   city_copy[4] + [next_city_to_visit._index], updated_cost))
+                   city_copy[4] + [next_city_to_visit._sub_route_index], updated_cost))
+
+
 
         return result
 
@@ -448,6 +447,10 @@ class TSPSolver:
 
 
     def fancy(self, time_allowance=60.0):
+        self._fancy_count = 0
+        print('fancy')
+        results = {}
+        start_time = time.time()
 
         greedy_route = self.greedy()['soln'].route
         sub_routes = []
@@ -455,9 +458,9 @@ class TSPSolver:
 
         for i in range(len(greedy_route)):
             current_sub_route.append(greedy_route[i])
-            greedy_route[i]._sub_route_index = i % 10
+            greedy_route[i]._sub_route_index = i % 16
 
-            if i % 10 == 0 and i != 0:
+            if i % 16 == 0 and i != 0:
                 if i == len(greedy_route) - 1: current_sub_route.append(greedy_route[0])
                 sub_routes.append(current_sub_route.copy())
                 current_sub_route = [greedy_route[i]]
@@ -465,12 +468,26 @@ class TSPSolver:
                 current_sub_route.append(greedy_route[0])
                 sub_routes.append(current_sub_route)
 
-        bb_sub_routes = []
+        #bb_sub_routes = []
+        total_route = []
         for route in sub_routes:
             # run B and B on each subroute
-            bb_sub_routes.append(self.branchAndBoundFancy(route)['soln'].route)
+            #bb_sub_routes.append(self.branchAndBoundFancy(route)['soln'].route)
+            total_route = total_route + self.branchAndBoundFancy(route)['soln'].route
 
-        return
+
+        bssf = TSPSolution(total_route)
+
+        end_time = time.time()
+        results['cost'] = bssf.cost
+        results['time'] = end_time - start_time
+        results['count'] = -1
+        results['soln'] = bssf
+        results['max'] = None
+        results['total'] = None
+        results['pruned'] = None
+
+        return results
 
     def branchAndBoundFancy(self, fCities, time_allowance=60.0):
         heap = []
@@ -481,11 +498,13 @@ class TSPSolver:
         num_solutions = 0
         bssf = self.greedy(time_allowance=time_allowance)['soln']
         cities = fCities
-        self.cities = cities
         self.lowest_ave_cost = float("inf")
         self.lowest_cost = bssf.cost
-        first_reduced_matrix, first_lb = self.get_fancy_init_reduced_matrix(cities)
-        first_city = tuple((first_lb, cities[0], cities[1:], first_reduced_matrix, [cities[0]._index], first_lb, 0))
+        linking_city = cities.pop() # = cities[:len(cities)-1]
+        print(linking_city._name)
+        self.cities = cities
+        first_reduced_matrix, first_lb = self.get_fancy_init_reduced_matrix(cities, linking_city)
+        first_city = tuple((first_lb, cities[0], cities[1:], first_reduced_matrix, [cities[0]._sub_route_index], first_lb, 0))
 
         # 0 - val to use for sorting
         # 1 - current node
@@ -497,11 +516,11 @@ class TSPSolver:
 
         heapq.heappush(heap, first_city)
         start_time = time.time()
-        while time.time() - start_time < time_allowance and len(heap):
+        while len(heap):
             next_city = heapq.heappop(heap)
             if next_city[5] < self.lowest_cost:
                 for city in next_city[2]:
-                    if self._scenario._edge_exists[next_city[1]._index][city._index]:
+                    if self._scenario._edge_exists[next_city[1]._sub_route_index][city._sub_route_index]:
                         new_expanded_problem = self.get_fancy_reduced_matrix(city, next_city)
                         if not len(new_expanded_problem[2]):
                             route = self.convert_to_cities(new_expanded_problem[4])
